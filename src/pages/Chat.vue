@@ -4,10 +4,10 @@
             <t-layout style="height: 100%">
                 <t-aside style="border-right: solid 1px #c2c2c2">
                     <t-header class="list-header">
-                        列表
+                        在线用户
                     </t-header>
                     <t-content class="list-content">
-                        <div v-for="user in users" :key="user.username"
+                        <div v-for="user in onlineUsers" :key="user.username"
                             class="user-list"
                             :class ="{'t-card-sel': user.username === selUser?.username }"
                             @click="(e) => handleUserSel(user)">
@@ -35,7 +35,15 @@
                         </div>
                     </t-content>
                     <t-footer v-if="selUser" class="send-box">
-                        <t-textarea v-model="messageText" style= "height: 100%" placeholder="请输入内容"></t-textarea>
+                        <t-textarea v-model="messageText"
+                            style= "height: 100%"
+                            placeholder="请输入内容"
+                            @keydown="(value, context) => {
+                                if(context?.e?.keyCode === 13) {
+                                    handleSend();
+                                }
+                            }"
+                        ></t-textarea>
                         <t-button @click="handleSend">发送</t-button>
                     </t-footer>
                 </t-layout>
@@ -47,34 +55,81 @@
 <script>
 import {defineComponent, ref, onUnmounted, computed} from 'vue';
 import connectSocket from '../utils/socket';
+import { MessageType, UserState } from '../config'
 
 export default defineComponent({
     setup() {
         // 在线用户列表
-        let users = ref([]);
+        let onlineUsers = ref([]);
         // 选中的聊天对象
         let selUser = ref(null);
-
+        // 未读数量
         let unreadCount = ref({ /* [socketid]: 0 */ })
-
         // 当前用户的SocketId
         let currentSocketId = ref('');
-
+        // 发送消息的内容
         let messageText = ref('');
         // 所有用户的相关的消息
         let fullMessages = ref({ /* socketid: [message] */});
+
+        // 当前选中聊天用户的消息
         let messages = computed(() => {
             let socketid = selUser.value?.socketid;
+            if(!socketid) return [];
             return fullMessages.value[socketid] || [];
         });
-        
+
         // 显示消息
-        function addMessage(data) {
+        function setMessage(data) {
+            const {from, to} = data;
             let fullMsg = fullMessages.value;
-            let socketid = currentSocketId.value === data.from ? data.to : data.from;
+            let socketid = currentSocketId.value === from ? to : from;
             fullMsg[socketid] = fullMsg[socketid] || [];
             fullMsg[socketid].push(data);
             fullMessages.value = fullMsg;
+
+            // 是否是当前正在聊天的用户窗口
+            let isCurrentChatUser = selUser.value 
+                                    && (
+                                        from === selUser.value.socketid
+                                        || to === selUser.value.socketid
+                                    ); 
+            if(!isCurrentChatUser) {
+                const count = unreadCount.value[from] || 0; 
+                unreadCount.value[from] = count + 1;
+            }
+        }
+
+        // 显示在线用户列表
+        function setOnlineUsers(users = []) {
+            let _users = onlineUsers.value;
+            for (let u of users) {
+                if (!u) continue;
+                let index = _users.findIndex(user => user.username === u?.username);
+                if (index === -1) {
+                    _users.push(u);
+                } else {
+                    _users[index] = u;
+                }
+            }
+            onlineUsers.value = [..._users];
+        }
+
+        // 设置下线用户信息
+        function setOfflineUsers(users = []) {
+            let _users = onlineUsers.value;
+            for (let u of users) {
+                let index = _users.findIndex(user => user.username === u?.username);
+                if (index >= 0) {
+                    _users.splice(index, 1);
+                }
+                delete fullMessages.value[u.socketid];
+                delete unreadCount.value[u.socketid];
+                if(u.socketid === selUser.value?.socketid) {
+                    selUser.value = null;
+                }
+            }
+            onlineUsers.value = [..._users];
         }
         
         let socket = connectSocket();
@@ -84,44 +139,15 @@ export default defineComponent({
         });
         socket.on('msg', data => {
             switch (data.type) {
-                case 'user':
-                    if (data.state === 'online') {
-                        let _users = users.value;
-                        let serverUsers = data.users;
-                        for (let u of serverUsers) {
-                            if (!u) continue;
-                            let index = _users.findIndex(user => user.username === u?.username);
-                            if (index === -1) {
-                                _users.push(u);
-                            } else {
-                                _users[index] = u;
-                            }
-                        }
-                        users.value = [..._users];
-                    } else if (data.state === 'offline') {
-                        let _users = users.value;
-                        let serverUsers = data.users;
-                        for (let u of serverUsers) {
-                            let index = _users.findIndex(user => user.username === u?.username);
-                            if (index >= 0) {
-                                _users.splice(index, 1);
-                            }
-                            delete fullMessages.value[u.socketid];
-                            delete unreadCount.value[u.socketid];
-                            if(u.socketid === selUser.value?.socketid) {
-                                selUser.value = null;
-                            }
-                        }
-                        users.value = [..._users];
+                case MessageType.USER:
+                    if (data.state === UserState.ON_LINE) {
+                        setOnlineUsers(data.users);
+                    } else if (data.state === UserState.OFF_LINE) {
+                        setOfflineUsers(data.users);
                     }
                     break;
-                case 'message':
-                    addMessage(data);
-                    if(data.to !== selUser.value.socketid) {
-                        // eslint-disable-next-line no-case-declarations
-                        const count = unreadCount.value[data.from] || 0; 
-                        unreadCount.value[data.from] = count + 1;
-                    } 
+                case MessageType.MESSAGE:
+                    setMessage(data);
                     break;
             }
         });
@@ -129,11 +155,14 @@ export default defineComponent({
             socket.disconnect();
         });
 
+
+        // 选中用户事件
         function handleUserSel(user) {
             unreadCount.value[user.socketid] = 0;
             selUser.value = user;
         }
         
+        // 发送消息事件
         function handleSend() {
             let message = {
                 from: currentSocketId.value,
@@ -141,15 +170,15 @@ export default defineComponent({
                 content: messageText.value
             };
             socket.emit('msg', {
-                type: 'message',
+                type: MessageType.MESSAGE,
                 ...message
             });
             messageText.value = '';
-            addMessage(message);
+            setMessage(message);
         }  
         
         return {
-            users,
+            onlineUsers,
             selUser,
             handleUserSel,
              

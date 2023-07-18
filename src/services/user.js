@@ -1,21 +1,32 @@
-import { socket } from '../utils/socket';
+const userStore = [];
 
-export function onUserChange(callback) {
-    
-}
+export default initUserSocket(socket, onUserChage) {
+    socket.on('msg', data => {
+        if(data?.type !== 'user') return;
 
-let isObserve = false;
-export default initUserSocket() {
-    if(isObserve) return;
-    isObserve = true;
-
-    socket.on("msg", (data) => {
-        // switch(data.type) {
-    
-        // }
-        // socket.emit("msg", "你好服务器");
-        // //监听浏览器通过msg事件发送的信息
-        // console.log(data); //你好浏览器
+        if (data.state === 'online') {
+            let serverUsers = data.users;
+            for (let u of serverUsers) {
+                if (!u) continue;
+                let index = userStore.findIndex(user => user.username === u?.username);
+                if (index === -1) {
+                    userStore.push(u);
+                } else {
+                    userStore[index] = u;
+                }
+            }
+            onUserChange([...userStore]);
+        } else if (data.state === 'offline') {
+            let _users = users.value;
+            let serverUsers = data.users;
+            for (let u of serverUsers) {
+                let index = userStore.findIndex(user => user.username === u?.username);
+                if (index >= 0) {
+                    userStore.splice(index, 1);
+                }
+            }
+            onUserChange([...userStore]);
+        }
     });
 };
 

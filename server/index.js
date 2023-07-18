@@ -6,6 +6,8 @@ const session = require('koa-session')
 const bodyParser = require('koa-bodyparser');
 const router = require('./routes/index')
 
+const { apiWhiteList, pageWhiteList } = require('./config');
+
 const app = new Koa()
 app.use(bodyParser())
 
@@ -17,7 +19,6 @@ app.use(session({
 }, app));
 
 app.use(async (ctx, next) => {
-    
     let pathname = ctx.path
 
     // 静态资源 跳过鉴权
@@ -25,16 +26,17 @@ app.use(async (ctx, next) => {
         await next()
         return
     }
-    if(['/favicon.ico'].indexOf(pathname)) {
+    if(['/favicon.ico'].indexOf(pathname) > -1) {
         await next()
         return
     }
+
 
     let session = ctx.session
 
     // 接口 未登录时接口直接报错
     if(pathname.startsWith('/api/')) {
-        if(!session.isLogin) {
+        if(!session.isLogin && apiWhiteList.indexOf(pathname) === -1) {
             ctx.status = 403
             ctx.body = '用户未登录'
         } else {
@@ -44,7 +46,7 @@ app.use(async (ctx, next) => {
     }
 
     // 登录页 如果已经登录，访问登录页面时直接跳转到主页
-    if(['/login'].indexOf(pathname)) {
+    if(pageWhiteList.indexOf(pathname) > -1) {
         if(session.isLogin) {
             ctx.status = 302
             ctx.redirect('/') // 主页

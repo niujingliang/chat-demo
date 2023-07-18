@@ -1,4 +1,5 @@
 const { addUser, removeUser, getAllUser } = require('./services/user');
+const { MessageType, UserState } = require('./config');
 
 function attachSocket(app) {
     const server = require('http').createServer(app.callback());
@@ -13,8 +14,8 @@ function attachSocket(app) {
 
         // 初始化所有在线用户
         socket.emit('msg', {
-            type: 'user',
-            state: 'online',
+            type: MessageType.USER,
+            state: UserState.ON_LINE,
             username,
             users: getAllUser(),
         })
@@ -22,10 +23,9 @@ function attachSocket(app) {
         let user = addUser(username, socket.id);
         // 通知其他用户上线
         socket.broadcast.emit('msg', {
-            type: 'user',
-            state: 'online',
+            type: MessageType.USER,
+            state: UserState.ON_LINE,
             username,
-            from: 'broadcast',
             users: [user],
         });
         
@@ -33,19 +33,17 @@ function attachSocket(app) {
         socket.on('disconnect', () => {
             let user = removeUser(socket.id)
             socket.broadcast.emit('msg', {
-                type: 'user',
-                state: 'offline',
-                from: 'broadcast',
+                type: MessageType.USER,
                 username,
+                state: UserState.OFF_LINE,
                 users: [user]
             });
         });
 
         socket.on('msg', (data) => {
-            console.log('======>server', data);
-            if(data.type === 'message') {
+            if(data.type === MessageType.MESSAGE) {
                 io.to(data.to).emit('msg', {
-                    type: 'message',
+                    type: MessageType.MESSAGE,
                     from: data.from,
                     to: data.to,
                     content: data.content,

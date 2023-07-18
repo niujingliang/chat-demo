@@ -1,7 +1,7 @@
 <template>
     <div class="login-container">
         <div class="login-box">
-            <t-input v-model="account" autocomplete="off" placeholder="账号">
+            <t-input v-model.trim="username" autocomplete="off" placeholder="账号">
             </t-input>
             <t-button type="primary" class="login-btn" @click="login">登 录</t-button>
         </div>
@@ -16,12 +16,15 @@ import { MessagePlugin } from 'tdesign-vue-next';
 
 export default defineComponent({
     setup() {
-        const account = ref('');
+        const username = ref('');
         const router = useRouter();
 
         const login = async () => {
-            console.log(account.value);
-            let res = await axios.post('/api/login', { username: account.value });
+            if(!username.value) {
+                MessagePlugin.warning('请输入账号！')
+                return;
+            }
+            let res = await axios.post('/api/login', { username: username.value });
             if(res?.data?.code === 0) {
                 router.replace('/')
             } else {
@@ -30,7 +33,7 @@ export default defineComponent({
         }
 
         return {
-            account,
+            username,
             login,
         }
     }
